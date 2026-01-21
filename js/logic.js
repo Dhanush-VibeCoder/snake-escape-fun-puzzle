@@ -24,24 +24,50 @@ const RANK_TITLES = [
     { count: 200, title: "SNAKE GOD" }
 ];
 
-// Particle Class
+// Particle Class with Pooling support
 class Particle {
-    constructor(x, y, color) {
+    constructor() {
+        this.reset();
+    }
+    reset() {
+        this.active = false;
+        this.x = 0; this.y = 0; this.color = '';
+        this.vx = 0; this.vy = 0;
+        this.alpha = 1;
+        this.size = 0;
+    }
+    init(x, y, color) {
         this.x = x; this.y = y; this.color = color;
         this.vx = (Math.random() - 0.5) * 12;
         this.vy = (Math.random() - 0.5) * 12;
         this.alpha = 1;
         this.size = Math.random() * 5 + 2;
+        this.active = true;
     }
-    update() { this.x += this.vx; this.y += this.vy; this.alpha -= 0.025; }
+    update() {
+        if (!this.active) return;
+        this.x += this.vx; this.y += this.vy;
+        this.alpha -= 0.025;
+        if (this.alpha <= 0) this.active = false;
+    }
     draw(ctx) {
+        if (!this.active) return;
         ctx.globalAlpha = this.alpha;
         ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         ctx.fill();
-        ctx.globalAlpha = 1;
     }
+}
+
+const particlePool = [];
+function getParticleFromPool() {
+    for (let p of particlePool) {
+        if (!p.active) return p;
+    }
+    const newP = new Particle();
+    particlePool.push(newP);
+    return newP;
 }
 
 // Snake Class
@@ -131,6 +157,8 @@ class Snake {
 
         ctx.save();
 
+        const isMobile = (typeof isMobileDevice === 'function') ? isMobileDevice() : (window.innerWidth < 768);
+
         let shadowBlur = isChallengeLevel ? 20 : 12;
         let shadowColor = this.color;
 
@@ -142,8 +170,11 @@ class Snake {
             shadowColor = 'rgba(251, 191, 36, 0.6)';
         }
 
-        ctx.shadowBlur = shadowBlur;
-        ctx.shadowColor = shadowColor;
+        // PERFORMANCE: Disable shadows on mobile
+        if (!isMobile) {
+            ctx.shadowBlur = shadowBlur;
+            ctx.shadowColor = shadowColor;
+        }
 
         for (let i = this.cells.length - 1; i >= 0; i--) {
             const pos = this.getSegmentPos(i);
@@ -165,13 +196,14 @@ class Snake {
             ctx.arc(cx, cy + 3, sWidth * 0.48, 0, Math.PI * 2);
             ctx.fill();
 
-            // 2. MAIN BODY
+            // 2. MAIN BODY (Performance: Use flat color + single highlight on mobile)
             let color1 = this.color;
             let color2 = this.adjustColor(this.color, -40);
 
             if (selectedSkin === 'neon') {
                 color1 = '#22d3ee';
                 color2 = '#0891b2';
+                // Shimmer is okay but skip if ultra low perf? Let's keep for now.
                 const shim = Math.sin(Date.now() * 0.005 + i * 0.5) * 20;
                 color1 = this.adjustColor(color1, shim);
             } else if (selectedSkin === 'gold') {
@@ -179,10 +211,15 @@ class Snake {
                 color2 = '#b45309';
             }
 
-            const bodyGrad = ctx.createRadialGradient(cx - 5, cy - 8, 2, cx, cy, sWidth / 2);
-            bodyGrad.addColorStop(0, color1);
-            bodyGrad.addColorStop(1, color2);
-            ctx.fillStyle = bodyGrad;
+            if (isMobile) {
+                ctx.fillStyle = color1;
+            } else {
+                const bodyGrad = ctx.createRadialGradient(cx - 5, cy - 8, 2, cx, cy, sWidth / 2);
+                bodyGrad.addColorStop(0, color1);
+                bodyGrad.addColorStop(1, color2);
+                ctx.fillStyle = bodyGrad;
+            }
+
             ctx.beginPath();
             ctx.arc(cx, cy, sWidth / 2, 0, Math.PI * 2);
             ctx.fill();
@@ -213,6 +250,7 @@ class Snake {
 
             if (i === 0) this.drawHeadDetails(ctx, cx, cy, pos.angle, selectedSkin);
         }
+        ctx.globalAlpha = 1.0;
         ctx.restore();
     }
 
@@ -287,7 +325,12 @@ class Snake {
 
     isPointInside(px, py) {
         if (this.status !== 'idle') return false;
-        return this.cells.some(cell => Math.hypot(px - (cell.x * cellSize + cellSize / 2), py - (cell.y * cellSize + cellSize / 2)) < snakeWidth / 2 + 5);
+        const radiusSq = Math.pow(snakeWidth / 2 + 5, 2);
+        return this.cells.some(cell => {
+            const dx = px - (cell.x * cellSize + cellSize / 2);
+            const dy = py - (cell.y * cellSize + cellSize / 2);
+            return (dx * dx + dy * dy) < radiusSq;
+        });
     }
 
     isBlocked(allSnakes, obstacleList = []) {
@@ -319,9 +362,15 @@ class Snake {
 
     explode(renderOffsetX, renderOffsetY) {
         const pos = this.getSegmentPos(0);
+        const isMobile = (typeof isMobileDevice === 'function') ? isMobileDevice() : (window.innerWidth < 768);
+        const count = isMobile ? 8 : 15;
         // Assumes particles global array exists
         if (typeof particles !== 'undefined') {
-            for (let i = 0; i < 15; i++) particles.push(new Particle(pos.x + renderOffsetX, pos.y + renderOffsetY, this.color));
+            for (let i = 0; i < count; i++) {
+                const p = getParticleFromPool();
+                p.init(pos.x + renderOffsetX, pos.y + renderOffsetY, this.color);
+                particles.push(p);
+            }
         }
     }
 }
@@ -404,11 +453,20 @@ function getDifficultyProfile(lvl) {
 // Returns TRUE if acyclic and valid (Solvable).
 // Returns FALSE if cycle detected or blocked by obstacle.
 function isSolvableGraph(snakes, obstacles) {
+    // Optimization: Build a occupancy grid for fast lookup
+    const idGrid = Array(currentGridH).fill().map(() => Array(currentGridW).fill(null));
+    snakes.forEach(s => {
+        s.cells.forEach(c => {
+            if (c.y >= 0 && c.y < currentGridH && c.x >= 0 && c.x < currentGridW) {
+                idGrid[c.y][c.x] = s.id;
+            }
+        });
+    });
+
     const adj = new Map();
     snakes.forEach(s => adj.set(s.id, []));
 
     for (let s of snakes) {
-        // Trace Ray from Head in Dir
         let dx = DIRS[s.dirIndex].x;
         let dy = DIRS[s.dirIndex].y;
         let cx = s.cells[0].x;
@@ -417,36 +475,27 @@ function isSolvableGraph(snakes, obstacles) {
         let blockedBySet = new Set();
         let hitObs = false;
 
-        // Trace forward until edge
         while (true) {
             cx += dx;
             cy += dy;
 
-            // Wall Check (Success condition - reached freedom)
             if (cx < 0 || cx >= currentGridW || cy < 0 || cy >= currentGridH) break;
 
-            // Obstacle Check
             if (obstacles.some(o => o.x === cx && o.y === cy)) {
                 hitObs = true;
-                break; // PERMANENTLY BLOCKED
+                break;
             }
 
-            // Snake Check: Check ALL blockers in path, not just first.
-            const blocker = snakes.find(other => other.cells.some(c => c.x === cx && c.y === cy));
-            if (blocker) {
-                if (blocker.id !== s.id) {
-                    blockedBySet.add(blocker.id);
-                }
+            const blockerId = idGrid[cy][cx];
+            if (blockerId !== null && blockerId !== s.id) {
+                blockedBySet.add(blockerId);
             }
         }
 
-        if (hitObs) return false; // Immediate Fail
-
-        // Add all unique blockers as dependencies
+        if (hitObs) return false;
         blockedBySet.forEach(id => adj.get(s.id).push(id));
     }
 
-    // Cycle Detection
     const visited = new Set();
     const recStack = new Set();
 

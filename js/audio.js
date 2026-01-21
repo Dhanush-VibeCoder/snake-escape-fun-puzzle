@@ -188,6 +188,14 @@ class AudioManager {
             this.playTone(150, 'sawtooth', 0.2, 0.1);
         }
     }
+
+    playScreenShift() {
+        if (this.buffers['screenShift']) {
+            this.playBuffer('screenShift', 0.4);
+        } else {
+            this.playWhoosh();
+        }
+    }
 }
 
 const audioManager = new AudioManager();

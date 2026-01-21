@@ -24,6 +24,10 @@ let currentStars = 0;
 let renderOffsetX = 0;
 let renderOffsetY = 0;
 
+// Offscreen Caching
+let backgroundCanvas = document.createElement('canvas');
+let backgroundCtx = backgroundCanvas.getContext('2d');
+
 // Level Buffering System
 const levelBuffer = new Map();
 let levelWorker = null;
@@ -156,6 +160,7 @@ function initLevel(lvl) {
 
     // Explicitly call resize to ensure layout is correct before first draw
     resize();
+    drawBackground();
 }
 
 // Game Loop and Rendering Logic Below
@@ -177,93 +182,23 @@ function drawLoop() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Check if particles is array (it's initialized in initLevel)
+    // 1. Draw Cached Background
+    ctx.drawImage(backgroundCanvas, 0, 0);
+
+    // 2. Draw Particles
     if (Array.isArray(particles)) {
-        particles.forEach((p, i) => {
-            p.update(); p.draw(ctx);
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.update();
+            p.draw(ctx);
             if (p.alpha <= 0) particles.splice(i, 1);
-        });
+        }
     }
 
     ctx.save();
     ctx.translate(renderOffsetX, renderOffsetY);
 
-    // Draw Board Background / Tiles
-    if (theme.bg && theme.bg !== 'transparent') {
-        ctx.fillStyle = theme.bg;
-        ctx.fillRect(0, 0, currentGridW * cellSize, currentGridH * cellSize);
-    }
-
-    // Draw Individual Cells if variation is needed
-    if (currentBoard === 'grass') {
-        for (let x = 0; x < currentGridW; x++) {
-            for (let y = 0; y < currentGridH; y++) {
-                // Checkerboard Logic
-                ctx.fillStyle = (x + y) % 2 === 0 ? theme.cell : theme.bg;
-                ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
-
-                // Add "Mossy" texture details to tiles
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
-                const dotSize = cellSize * 0.1;
-                if ((x * 123 + y * 456) % 5 === 0) {
-                    ctx.beginPath();
-                    ctx.roundRect(x * cellSize + cellSize * 0.2, y * cellSize + cellSize * 0.2, dotSize * 2, dotSize * 2, 4);
-                    ctx.fill();
-                }
-                if ((x * 456 + y * 789) % 7 === 0) {
-                    ctx.beginPath();
-                    ctx.roundRect(x * cellSize + cellSize * 0.6, y * cellSize + cellSize * 0.7, dotSize * 3, dotSize * 1.5, 3);
-                    ctx.fill();
-                }
-
-                // Inner highlight for glass tile effect
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-                ctx.strokeRect(x * cellSize + 2, y * cellSize + 2, cellSize - 4, cellSize - 4);
-            }
-        }
-
-        // Draw Corner Foliage
-        drawFoliage(ctx, 0, 0, 'top-left');
-        drawFoliage(ctx, currentGridW * cellSize, 0, 'top-right');
-        drawFoliage(ctx, 0, currentGridH * cellSize, 'bottom-left');
-        drawFoliage(ctx, currentGridW * cellSize, currentGridH * cellSize, 'bottom-right');
-
-    } else if (theme.bg && theme.bg !== 'transparent') {
-        // Fallback for other themed boards if needed
-    }
-
-    // Draw Grid Lines (Soil/Themed lines)
-    ctx.strokeStyle = isChallengeLevel ? 'rgba(249, 212, 35, 0.08)' : theme.grid;
-    ctx.lineWidth = currentBoard === 'grass' ? 2 : 1;
-    for (let x = 0; x <= currentGridW; x++) {
-        ctx.beginPath(); ctx.moveTo(x * cellSize, 0); ctx.lineTo(x * cellSize, currentGridH * cellSize); ctx.stroke();
-    }
-    for (let y = 0; y <= currentGridH; y++) {
-        ctx.beginPath(); ctx.moveTo(0, y * cellSize); ctx.lineTo(currentGridW * cellSize, y * cellSize); ctx.stroke();
-    }
-
-    // Draw Obstacles
-    obstacles.forEach(obs => {
-        const ox = obs.x * cellSize + cellSize * 0.1;
-        const oy = obs.y * cellSize + cellSize * 0.1;
-        const os = cellSize * 0.8;
-
-        ctx.save();
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = 'black';
-        ctx.fillStyle = theme.obstacle;
-        ctx.beginPath();
-        // Rounded rect for rock
-        ctx.roundRect(ox, oy, os, os, 8);
-        ctx.fill();
-
-        // Detail (highlight)
-        ctx.fillStyle = theme.obstacleInner;
-        ctx.beginPath();
-        ctx.roundRect(ox + os * 0.1, oy + os * 0.1, os * 0.8, os * 0.8, 6);
-        ctx.fill();
-        ctx.restore();
-    });
+    // BOARD DRAWING MOVED TO drawBackground()
 
     snakes.forEach(s => s.draw(ctx));
 
@@ -285,6 +220,91 @@ function drawLoop() {
     }
     ctx.restore();
     animationFrameId = requestAnimationFrame(drawLoop);
+}
+
+function drawBackground() {
+    const canvas = document.getElementById('gameCanvas');
+    if (!canvas) return;
+
+    backgroundCanvas.width = canvas.width;
+    backgroundCanvas.height = canvas.height;
+
+    const ctx = backgroundCtx;
+    const currentBoard = Economy.getSelectedBoard();
+    const theme = BOARD_CONFIGS[currentBoard] || BOARD_CONFIGS.classic;
+
+    ctx.clearRect(0, 0, backgroundCanvas.width, backgroundCanvas.height);
+    ctx.save();
+    ctx.translate(renderOffsetX, renderOffsetY);
+
+    // 1. Draw Board Background / Tiles
+    if (theme.bg && theme.bg !== 'transparent') {
+        ctx.fillStyle = theme.bg;
+        ctx.fillRect(0, 0, currentGridW * cellSize, currentGridH * cellSize);
+    }
+
+    if (currentBoard === 'grass') {
+        for (let x = 0; x < currentGridW; x++) {
+            for (let y = 0; y < currentGridH; y++) {
+                ctx.fillStyle = (x + y) % 2 === 0 ? theme.cell : theme.bg;
+                ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                const dotSize = cellSize * 0.1;
+                if ((x * 123 + y * 456) % 5 === 0) {
+                    ctx.beginPath();
+                    ctx.roundRect(x * cellSize + cellSize * 0.2, y * cellSize + cellSize * 0.2, dotSize * 2, dotSize * 2, 4);
+                    ctx.fill();
+                }
+                if ((x * 456 + y * 789) % 7 === 0) {
+                    ctx.beginPath();
+                    ctx.roundRect(x * cellSize + cellSize * 0.6, y * cellSize + cellSize * 0.7, dotSize * 3, dotSize * 1.5, 3);
+                    ctx.fill();
+                }
+
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.strokeRect(x * cellSize + 2, y * cellSize + 2, cellSize - 4, cellSize - 4);
+            }
+        }
+
+        drawFoliage(ctx, 0, 0, 'top-left');
+        drawFoliage(ctx, currentGridW * cellSize, 0, 'top-right');
+        drawFoliage(ctx, 0, currentGridH * cellSize, 'bottom-left');
+        drawFoliage(ctx, currentGridW * cellSize, currentGridH * cellSize, 'bottom-right');
+    }
+
+    // 2. Draw Grid Lines
+    ctx.strokeStyle = (typeof isChallengeLevel !== 'undefined' && isChallengeLevel) ? 'rgba(249, 212, 35, 0.08)' : theme.grid;
+    ctx.lineWidth = currentBoard === 'grass' ? 2 : 1;
+    for (let x = 0; x <= currentGridW; x++) {
+        ctx.beginPath(); ctx.moveTo(x * cellSize, 0); ctx.lineTo(x * cellSize, currentGridH * cellSize); ctx.stroke();
+    }
+    for (let y = 0; y <= currentGridH; y++) {
+        ctx.beginPath(); ctx.moveTo(0, y * cellSize); ctx.lineTo(currentGridW * cellSize, y * cellSize); ctx.stroke();
+    }
+
+    // 3. Draw Obstacles
+    obstacles.forEach(obs => {
+        const ox = obs.x * cellSize + cellSize * 0.1;
+        const oy = obs.y * cellSize + cellSize * 0.1;
+        const os = cellSize * 0.8;
+
+        ctx.save();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'black';
+        ctx.fillStyle = theme.obstacle;
+        ctx.beginPath();
+        ctx.roundRect(ox, oy, os, os, 8);
+        ctx.fill();
+
+        ctx.fillStyle = theme.obstacleInner;
+        ctx.beginPath();
+        ctx.roundRect(ox + os * 0.1, oy + os * 0.1, os * 0.8, os * 0.8, 6);
+        ctx.fill();
+        ctx.restore();
+    });
+
+    ctx.restore();
 }
 
 function drawFoliage(ctx, cx, cy, position) {
@@ -383,6 +403,10 @@ function checkWinOrLoss() {
         const rewards = calculateRewards();
         const msg = isChallengeLevel ? "CHALLENGE MASTERED!" : "LEVEL COMPLETE!";
         if (typeof audioManager !== 'undefined') audioManager.playWin();
+
+        // CrazyGames: Happy time on win
+        Ads.happytime();
+
         showEndScreen(msg, "CONTINUE", () => {
             Ads.showInterstitial();
             initLevel(currentLevel + 1);
@@ -402,3 +426,30 @@ function checkWinOrLoss() {
 
 // Load progress immediately on startup
 loadProgress();
+
+/**
+ * ===== GameMonetize SDK Integration =====
+ * Pause game when SDK triggers SDK_GAME_PAUSE event
+ * Stops game loop and all animations
+ */
+function pauseGame() {
+    console.log("pauseGame() called - Pausing game loop");
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+    isAnimating = false;
+    isGameOver = true; // Block input/interactions
+}
+
+/**
+ * ===== GameMonetize SDK Integration =====
+ * Resume game when SDK triggers SDK_GAME_START event
+ * Resumes game loop from paused state
+ */
+function resumeGame() {
+    console.log("resumeGame() called - Resuming game loop");
+    isGameOver = false; // Re-enable input/interactions
+    isAnimating = false; // Preserve animation state
+    startGameLoop(); // Restart the game loop from same state
+}

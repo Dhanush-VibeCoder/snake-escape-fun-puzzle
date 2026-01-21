@@ -995,7 +995,8 @@ body {
 .game-title-image {
     max-width: 100%;
     height: auto;
-    max-height: 200px; /* Adjust based on your preference */
+    max-height: 200px;
+    /* Adjust based on your preference */
     object-fit: contain;
     filter: drop-shadow(0 0 15px rgba(0, 255, 255, 0.7));
     transition: transform 0.3s ease, filter 0.3s ease;
@@ -1008,7 +1009,8 @@ body {
 
 
 .game-title-container {
-    min-height: 150px; /* Adjust based on your image height */
+    min-height: 150px;
+    /* Adjust based on your image height */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1020,6 +1022,48 @@ body {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.9); }
-    to { opacity: 1; transform: scale(1); }
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Performance Optimizations for Mobile */
+@media (max-width: 768px) {
+
+    #message-box,
+    #home-screen,
+    .ui-modal-content,
+    .shop-modal-content {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(15, 12, 41, 0.98) !important;
+    }
+
+    .btn,
+    .btn-icon,
+    .bg-card,
+    .skin-card {
+        box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3) !important;
+    }
+
+    .animate-glow,
+    .animate-float,
+    .btn-icon-pulse,
+    .shimmer-cell,
+    .particle {
+        animation: none !important;
+        /* Disable heavy ambient animations */
+        display: none !important;
+        /* Hide splash particles/grid on mobile */
+    }
+
+    #gameCanvas {
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+    }
 }

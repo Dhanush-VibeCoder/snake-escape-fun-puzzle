@@ -80,6 +80,9 @@ function resize() {
         confettiCanvas.width = window.innerWidth;
         confettiCanvas.height = window.innerHeight;
     }
+
+    // Performance: Redraw cached background after resize
+    if (typeof drawBackground === 'function') drawBackground();
 }
 
 // Handle user input
@@ -336,10 +339,16 @@ function showEndScreen(text, primaryBtnText, primaryFn, isWin, canWatchAd = fals
         messageBox.addEventListener('mousemove', handleTilt);
         messageBox.addEventListener('mouseleave', resetTilt);
     }
+
+    // CrazyGames: Stop gameplay when end screen is shown
+    Ads.gameplayStop();
 }
 
 function isMobileDevice() {
-    return (typeof window.orientation !== "undefined") || (navigator.userAgent.indexOf('IEMobile') !== -1);
+    return window.matchMedia("(max-width: 768px)").matches ||
+        (navigator.maxTouchPoints > 0) ||
+        (typeof window.orientation !== "undefined") ||
+        (navigator.userAgent.indexOf('IEMobile') !== -1);
 }
 
 // Load privacy policy content
@@ -351,7 +360,7 @@ function loadPrivacyPolicy() {
         })
         .catch(error => {
             console.error('Error loading privacy policy:', error);
-            document.getElementById('privacy-policy-content').innerHTML = 
+            document.getElementById('privacy-policy-content').innerHTML =
                 '<p>Could not load privacy policy. Please try again later.</p>';
         });
 }
@@ -360,12 +369,12 @@ function loadPrivacyPolicy() {
 function showPrivacyPolicy() {
     const overlay = document.getElementById('privacy-policy-overlay');
     const content = document.getElementById('privacy-policy-content');
-    
+
     // Load content if not already loaded
     if (!content.hasChildNodes()) {
         loadPrivacyPolicy();
     }
-    
+
     // Show overlay with animation
     overlay.style.display = 'flex';
     setTimeout(() => {
@@ -471,6 +480,9 @@ playBtn.addEventListener('click', () => {
     audioManager.init(); // Initialize audio context on user interaction
     audioManager.playUI();
 
+    // CrazyGames: Start gameplay
+    Ads.gameplayStart();
+
     homeScreen.style.opacity = '0';
     setTimeout(() => {
         homeScreen.style.display = 'none';
@@ -499,6 +511,10 @@ homeBtn.addEventListener('click', () => {
     // Pause the game when going to home
     if (typeof stopGameLoop === 'function') stopGameLoop();
     if (typeof audioManager !== 'undefined') audioManager.playScreenShift();
+
+    // CrazyGames: Stop gameplay
+    Ads.gameplayStop();
+
     showHomeScreen();
 });
 
